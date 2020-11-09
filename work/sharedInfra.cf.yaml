@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Deploy a Python Application and SQL DB to AWS for Crossover
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: cross2
+  VpcCidrBlock:
+    Type: String
+    Default: 172.16.0.0/20
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+  PubSub01CidrBlock:
+    Type: String
+    Default: 172.16.0.0/24
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+  PubSub02CidrBlock:
+    Type: String
+    Default: 172.16.2.0/24
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+  PrivSub01CidrBlock:
+    Type: String
+    Default: 172.16.1.0/24
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+  PrivSub02CidrBlock:
+    Type: String
+    Default: 172.16.3.0/24
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: crossq2
+  PublicSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, Fn::GetAZs: !Ref 'AWS::Region']
+      CidrBlock: !Ref PubSub01CidrBlock
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-PubSub01
+  PublicSubnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, Fn::GetAZs: !Ref 'AWS::Region']
+      CidrBlock: !Ref PubSub02CidrBlock
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-PubSub02
+  PrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, Fn::GetAZs: !Ref 'AWS::Region']
+      CidrBlock: !Ref PrivSub01CidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-PrivSub01
+  PrivateSubnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, Fn::GetAZs: !Ref 'AWS::Region']
+      CidrBlock: !Ref PrivSub02CidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-PrivSub02
+  Igw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-Igw
+  IgwAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref Igw
+      VpcId: !Ref Vpc
+  NatEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-NatGwEip
+  NatGw:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnet01
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-NatGw
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-PubRouteTable
+  PrivateRouteTable:
+    DependsOn: NatGw
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-PrivRouteTable
+  PublicRouteTablePubSub01Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet01
+  PublicRouteTablePubSub02Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet02
+  PrivateRouteTablePrivSub01Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet01
+  PrivateRouteTablePrivSub02Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet02
+  PubSubDefaultRoute:
+    DependsOn: IgwAttach
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+      RouteTableId: !Ref PublicRouteTable
+  PrivSubDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGw
+      RouteTableId: !Ref PrivateRouteTable
+  PublicSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: For public facing ALB
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+      VpcId: !Ref Vpc
+  PubSgIngress01:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      CidrIp: 0.0.0.0/0
+      Description: Allow all sources to port 80
+      FromPort: 80
+      ToPort: 80
+      GroupId: !Ref PublicSg
+      IpProtocol: tcp
+  PubSgIngress02:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      CidrIp: 0.0.0.0/0
+      Description: Allow all sources to port 443
+      FromPort: 443
+      ToPort: 443
+      GroupId: !Ref PublicSg
+      IpProtocol: tcp
+  AppSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AppSg
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+      VpcId: !Ref Vpc
+  AppSgIngress01:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourceSecurityGroupId: !Ref PublicSg
+      Description: Allow all sources to port 80
+      FromPort: 5000
+      ToPort: 5000
+      GroupId: !Ref AppSg
+      IpProtocol: tcp
+  RdsSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RdsSg
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+      VpcId: !Ref Vpc
+  RdsSgIngress01:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourceSecurityGroupId: !Ref AppSg
+      Description: Allow access from AppSg
+      FromPort: 3306
+      ToPort: 3306
+      GroupId: !Ref RdsSg
+      IpProtocol: tcp
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub ${ProjectCode}-VpcId
+  PublicSub01Id:
+    Value: !Ref PublicSubnet01
+    Export:
+      Name: !Sub ${ProjectCode}-PublicSubnet01Id
+  PublicSub02Id:
+    Value: !Ref PublicSubnet02
+    Export:
+      Name: !Sub ${ProjectCode}-PublicSubnet02Id
+  PrivateSub01Id:
+    Value: !Ref PrivateSubnet01
+    Export:
+      Name: !Sub ${ProjectCode}-PrivateSubnet01Id
+  PrivateSub02Id:
+    Value: !Ref PrivateSubnet02
+    Export:
+      Name: !Sub ${ProjectCode}-PrivateSubnet02Id
+  PublicSgId:
+    Value: !Ref PublicSg
+    Export:
+      Name: !Sub ${ProjectCode}-PublicSgId
+  AppSgId:
+    Value: !Ref AppSg
+    Export:
+      Name: !Sub ${ProjectCode}-AppSgId
+  RdsSgId:
+    Value: !Ref RdsSg
+    Export:
+      Name: !Sub ${ProjectCode}-RdsSgId

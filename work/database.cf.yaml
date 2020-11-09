@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  RDS Stack for crossover q2
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: cross2
+  DbName:
+    Type: String
+    Default: hello_world
+  DbMasterUsername:
+    Type: String
+    Default: webapp
+  DbMasterPassword:
+    Type: String
+    Default: webpass123#
+    NoEcho: true
+Resources:
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: RDS Subnet Group
+      DBSubnetGroupName: !Sub ${ProjectCode}-RdsSubGroup
+      SubnetIds:
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSubnet01Id
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSubnet02Id
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+  RdsInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '10'
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: false
+      AvailabilityZone: !Select [0, Fn::GetAZs: !Ref 'AWS::Region']
+      DBInstanceClass: db.t3.micro
+      DBName: !Ref DbName
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      Engine: mysql
+      EngineVersion: 8.0.21
+      MasterUsername: !Ref DbMasterUsername
+      MasterUserPassword: !Ref DbMasterPassword
+      Port: '3306'
+      PubliclyAccessible: false
+      StorageType: gp2
+      VPCSecurityGroups:
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-RdsSgId
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-Rds
+Outputs:
+  RdsEndpoint:
+    Value: !GetAtt RdsInstance.Endpoint.Address
+    Export:
+      Name: !Sub ${ProjectCode}-RdsInstanceDnsName

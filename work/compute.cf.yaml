@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Compute Stack for Crossover
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: cross2
+  InstanceType:
+    Type: String
+    Default: t3.micro
+  SshKeypairName:
+    Type: String
+    Default: CHANGEME
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Default: CHANGEME
+Resources:
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSgId
+      Subnets:
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSubnet01Id
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSubnet02Id
+      Type: application
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTg
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+
+  AppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref SshKeypairName
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              Fn::Sub: ${ProjectCode}-AppSgId
+  AppTg:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: '/'
+      HealthCheckPort: '5000'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Name: !Sub ${ProjectCode}-AppTg
+      Port: 5000
+      Protocol: HTTP
+      Tags:
+        - Key: ProjectCode
+          Value: !Ref ProjectCode
+        - Key: Name
+          Value: !Sub ${ProjectCode}-AppAsg
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: ${ProjectCode}-VpcId
+  Asg:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: AppAsg
+      # AvailabilityZones:
+      #   - !Select [0, Fn::GetAZs: !Ref 'AWS::Region']
+      #   - !Select [1, Fn::GetAZs: !Ref 'AWS::Region']
+      Cooldown: '300'
+      DesiredCapacity: '1'
+      MaxSize: '1'
+      MinSize: '1'
+      HealthCheckGracePeriod: 60
+      HealthCheckType: EC2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: '1'
+      TargetGroupARNs:
+        - !Ref AppTg
+      VPCZoneIdentifier:
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSubnet01Id
+        - Fn::ImportValue:
+            Fn::Sub: ${ProjectCode}-PublicSubnet02Id
+      Tags:
+        - Key: ProjectCode
+          PropagateAtLaunch: true
+          Value: !Ref ProjectCode
+        - Key: Name
+          PropagateAtLaunch: true
+          Value: !Sub ${ProjectCode}-AppAsg
